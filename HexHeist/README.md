@@ -1,0 +1,334 @@
+# HexHeist
+
+**HexHeist** is a modern, cross-platform desktop GUI for the AVRDUDE programming engine. It is designed for people who want the power of AVRDUDE without building every command by hand.
+
+HexHeist is **not AVRDUDE** and does not reimplement the programming protocols. It launches a separately installed AVRDUDE executable with an argument list, captures output in real time, and provides a safer, more discoverable desktop workflow.
+
+> Project status: **1.0.0 beta**. The command builder and discovery logic are unit-tested. Hardware programming should always be validated on the programmer/MCU combinations you intend to use before relying on the tool for production programming.
+
+## Highlights
+
+- Modern PySide6 / Qt 6 desktop interface
+- Dark, light, and system appearance modes
+- Runtime discovery of **all parts and programmers reported by the installed AVRDUDE**
+- AVRDUDE executable discovery on PATH plus common Homebrew, MacPorts, Arduino, Linux and Windows locations
+- Searchable/editable programmer and MCU selectors
+- Serial-port discovery using pyserial
+- Quick firmware write and verify workflow
+- Intel HEX, Intel HEX-with-comments, raw binary, Motorola S-record, ELF input, immediate and numeric AVRDUDE formats
+- Generic memory-operation queue for flash, EEPROM and any custom AVRDUDE memory name
+- Fuse and lock read/write panel, including modern `fuse0`...`fuse5` memory names
+- Chip erase, signature read and connection test
+- Interactive AVRDUDE terminal mode (`-t`)
+- Advanced switches: `-F`, `-n`, `-D`, `-V`, `-e`, verbosity, `-E`, repeated `-x`, bit clock, custom config and expert arguments
+- Live stdout/stderr console, timestamps, stop control and log export
+- Command preview and command history
+- Drag-and-drop firmware loading and recent-file menu
+- QSettings persistence for theme, target, programmer, port, geometry and other preferences
+- Confirmation dialogs for destructive operations
+
+## Why the MCU list is dynamic
+
+AVRDUDE does not maintain a conventional Arduino-style "board list". It has **part definitions** (MCUs) and **programmer definitions** in its configuration. HexHeist asks the installed AVRDUDE for those lists using `-p ?` and `-c ?`.
+
+That design has two advantages:
+
+1. HexHeist is not frozen to a short list compiled into the GUI.
+2. Installing a newer AVRDUDE version can make newly supported parts/programmers appear in HexHeist without a HexHeist update.
+
+If AVRDUDE cannot be found, HexHeist displays a small offline fallback set so the interface remains usable, but programming is not possible until a valid executable is selected.
+
+## Requirements
+
+- Python 3.10 or newer
+- PySide6 / Qt 6
+- pyserial
+- AVRDUDE installed separately
+- A supported programmer and target AVR device for real hardware operations
+
+## Install AVRDUDE
+
+### macOS
+
+Homebrew is the simplest option:
+
+```bash
+brew install avrdude
+```
+
+Common locations discovered automatically include:
+
+```text
+/opt/homebrew/bin/avrdude
+/usr/local/bin/avrdude
+/opt/local/bin/avrdude
+```
+
+HexHeist also searches common Arduino package locations.
+
+### Ubuntu / Debian
+
+```bash
+sudo apt update
+sudo apt install avrdude
+```
+
+### Windows
+
+Install a current AVRDUDE release from the official project, or use an AVRDUDE installation provided by an AVR/Arduino toolchain. Put `avrdude.exe` on PATH or select it using **Browse** in HexHeist.
+
+Official project: https://github.com/avrdudes/avrdude
+
+## Install HexHeist from source
+
+Clone/download this repository, then create a virtual environment:
+
+### macOS / Linux
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+python main.py
+```
+
+### Windows PowerShell
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+python main.py
+```
+
+You can also install the project itself:
+
+```bash
+pip install -e .
+hexheist
+```
+
+## First launch
+
+HexHeist attempts to locate AVRDUDE automatically. Detection priority is:
+
+1. Previously selected executable
+2. System PATH
+3. Common OS/toolchain locations
+
+When AVRDUDE is detected, HexHeist reads the installed version and queries the complete part/programmer catalogs.
+
+The preferred first-launch selections are:
+
+- Programmer: `usbasp`
+- Part: `m328p` / ATmega328P
+
+If those IDs are not present in the detected catalog, HexHeist leaves the relevant selector editable so another AVRDUDE ID can be entered.
+
+## Quick flash workflow
+
+1. Open **Device & Flash**.
+2. Confirm the AVRDUDE path.
+3. Select the programmer.
+4. Select the MCU/part.
+5. Select a serial port only if the programmer needs one. USB programmers such as USBasp commonly do not need a serial port.
+6. Select the firmware file.
+7. Confirm the detected/selected input format.
+8. Review the **Command Preview**.
+9. Click **Flash Firmware**.
+10. Review the confirmation dialog, then continue.
+11. Read the live AVRDUDE output in **Console**.
+
+Example command generated by HexHeist:
+
+```bash
+avrdude -c usbasp -p m328p -U flash:w:blink.hex:i
+```
+
+HexHeist does **not** execute this preview through a shell. The executable and each argument are passed separately to `QProcess`.
+
+## Generic memory operations
+
+The **Memories** page exposes AVRDUDE's `-U` model directly. You can queue multiple operations and run them in one AVRDUDE process.
+
+Examples:
+
+```text
+flash:w:firmware.hex:i
+eeprom:r:eeprom.bin:r
+usersig:r:usersig.hex:i
+lock:r:-:h
+```
+
+The memory selector is editable because AVRDUDE devices can expose memories beyond classic `flash` and `eeprom`, especially newer/XMEGA/UPDI families.
+
+## File formats
+
+HexHeist exposes these AVRDUDE formats:
+
+| ID | Meaning | Notes |
+|---|---|---|
+| `a` | Auto detect | Input only |
+| `i` | Intel HEX | Read/write |
+| `I` | Intel HEX with comments/tolerant input | Version-dependent details follow AVRDUDE |
+| `s` | Motorola S-record | Read/write |
+| `r` | Raw binary | Read/write |
+| `e` | ELF | Input only |
+| `m` | Immediate values | Useful for fuse/lock writes |
+| `d` | Decimal numeric list | Read/write numeric data |
+| `h` | Hex numeric list | Read/write numeric data |
+| `o` | Octal numeric list | Read/write numeric data |
+| `b` | Binary numeric list | Read/write numeric data |
+
+The installed AVRDUDE version is the source of truth for exact behavior.
+
+## Fuses and lock bits
+
+The **Fuses & Locks** page supports classic fuse names:
+
+- `lfuse`
+- `hfuse`
+- `efuse`
+- `fuse`
+- `lock`
+
+and modern numbered fuse memories:
+
+- `fuse0` through `fuse5`
+
+Not every MCU has every memory. Select only memories supported by the selected target.
+
+### Warning
+
+Writing incorrect fuse or lock values can change clock configuration, disable an ISP programming route, or restrict memory access. HexHeist intentionally requires confirmation before writing these values. Always validate values against the device datasheet.
+
+## Interactive terminal
+
+The **Terminal** page launches AVRDUDE with `-t` and keeps the process open. Commands typed in HexHeist are written to AVRDUDE's standard input.
+
+Useful first command:
+
+```text
+help
+```
+
+Available terminal commands depend on the installed AVRDUDE version and target/programmer combination.
+
+## Advanced options
+
+HexHeist exposes commonly useful advanced AVRDUDE controls:
+
+- Force signature/initialization: `-F`
+- No-write test mode: `-n`
+- Disable automatic erase: `-D`
+- Disable automatic verification: `-V`
+- Explicit chip erase: `-e`
+- Verbosity: repeated `-v`
+- Bit clock: `-B`
+- Exit specification: `-E`
+- Programmer-specific extended parameters: repeated `-x`
+- Custom configuration file: `-C`
+- Expert custom arguments
+
+Custom arguments are parsed into an argument list and are not executed via a command shell.
+
+## Keyboard shortcuts
+
+| Action | macOS | Windows/Linux |
+|---|---|---|
+| Open firmware | Cmd+O | Ctrl+O |
+| Read signature | Cmd+R | Ctrl+R |
+| Flash firmware | Cmd+W | Ctrl+W |
+| Verify firmware | Cmd+Shift+V | Ctrl+Shift+V |
+| Erase chip | Cmd+E | Ctrl+E |
+| Clear console | Cmd+L | Ctrl+L |
+| Test connection | F5 | F5 |
+| About | F1 | F1 |
+
+## USB and virtual machines
+
+If HexHeist runs inside a Linux/Windows VM on a Mac, the physical programmer must be attached/passed through to the guest OS. If macOS retains the USB device, AVRDUDE inside the VM will not see it.
+
+## Running tests
+
+Core tests do not require physical AVR hardware:
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+Static checks:
+
+```bash
+ruff check .
+python -m compileall .
+```
+
+Hardware testing should cover at least:
+
+- one USB programmer (for example USBasp)
+- one serial bootloader/programmer
+- flash write + verify
+- EEPROM read/write on a disposable test target
+- signature read
+- fuse reads
+- terminal startup and exit
+- cancel/stop behavior
+
+See `docs/DEVELOPMENT.md` for the release checklist.
+
+## Project structure
+
+```text
+HexHeist/
+├── main.py
+├── pyproject.toml
+├── requirements.txt
+├── requirements-dev.txt
+├── hexheist/
+│   ├── app.py
+│   ├── core/
+│   │   ├── commands.py
+│   │   ├── discovery.py
+│   │   ├── models.py
+│   │   └── settings.py
+│   └── ui/
+│       ├── components.py
+│       ├── main_window.py
+│       └── theme.py
+├── tests/
+└── docs/
+```
+
+## Design principles
+
+- **AVRDUDE remains the engine.** HexHeist does not duplicate protocol implementations.
+- **Runtime catalogs.** Part/programmer support follows the installed AVRDUDE.
+- **Safe process launch.** No shell-string execution.
+- **Destructive actions are explicit.** Erase, flash and fuse/lock writes are confirmed.
+- **Cross-platform first.** Avoid OS-specific programming logic where AVRDUDE already provides the abstraction.
+- **No cloud dependency.** HexHeist is a local desktop application.
+
+## Documentation
+
+- `docs/ARCHITECTURE.md` — code and process architecture
+- `docs/USER_GUIDE.md` — detailed workflows and troubleshooting
+- `docs/DEVELOPMENT.md` — development, testing and release guidance
+- `CONTRIBUTING.md` — contribution expectations
+
+## Licensing and AVRDUDE
+
+HexHeist source code in this repository is licensed under the MIT License unless a file states otherwise.
+
+AVRDUDE is a separate project and is distributed under GNU GPL v2 or later. **AVRDUDE is not included in this repository.** Users install/provide it separately. See the AVRDUDE project for its license and source code:
+
+https://github.com/avrdudes/avrdude
+
+AVRDUDESS is also a separate project. HexHeist does not copy or bundle its source code.
+
+## Disclaimer
+
+Programming microcontroller memories and configuration fuses can make hardware temporarily or permanently inaccessible through a particular programming interface if incorrect values are used. Use a recoverable development target while validating a new workflow.
